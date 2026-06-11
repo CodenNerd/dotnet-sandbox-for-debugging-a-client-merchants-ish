@@ -1,16 +1,26 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 
 namespace LegacyWebView.BugRepro;
 
 internal sealed class LocalPageServer : IDisposable
 {
+    private static readonly IReadOnlyDictionary<string, string> ProxiedScripts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["vendor/es6-promise.auto.min.js"] = "https://cdnjs.cloudflare.com/ajax/libs/es6-promise/4.2.8/es6-promise.auto.min.js",
+        ["vendor/staxjs-captcha.js"] = "https://staxjs.staxpayments.com/staxjs-captcha.js"
+    };
+
     private readonly HttpListener _listener;
     private readonly CancellationTokenSource _cts = new();
     private readonly string _root;
     private readonly Task _loop;
     private readonly Action<string>? _requestLogger;
+    private readonly ConcurrentDictionary<string, byte[]> _proxyCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HttpClient _httpClient = new();
 
     public string BaseUrl { get; }
 
@@ -98,6 +108,12 @@ internal sealed class LocalPageServer : IDisposable
 
         try
         {
+            if (ProxiedScripts.TryGetValue(relativePath, out var upstreamUrl))
+            {
+                ServeProxiedScript(context, relativePath, upstreamUrl);
+                return;
+            }
+
             var filePath = Path.GetFullPath(Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
             if (!filePath.StartsWith(_root, StringComparison.OrdinalIgnoreCase) || !File.Exists(filePath))
             {
@@ -107,10 +123,7 @@ internal sealed class LocalPageServer : IDisposable
             }
 
             var bytes = File.ReadAllBytes(filePath);
-            context.Response.StatusCode = 200;
-            context.Response.ContentType = GetContentType(filePath);
-            context.Response.ContentLength64 = bytes.Length;
-            context.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            WriteResponse(context, 200, GetContentType(filePath), bytes);
             _requestLogger?.Invoke($"HTTP 200: GET /{relativePath} ({bytes.Length} bytes)");
         }
         catch (Exception ex)
@@ -122,6 +135,29 @@ internal sealed class LocalPageServer : IDisposable
         {
             context.Response.Close();
         }
+    }
+
+    private void ServeProxiedScript(HttpListenerContext context, string relativePath, string upstreamUrl)
+    {
+        var bytes = _proxyCache.GetOrAdd(relativePath, _ => DownloadScript(upstreamUrl));
+        WriteResponse(context, 200, "application/javascript; charset=utf-8", bytes);
+        _requestLogger?.Invoke($"HTTP 200: GET /{relativePath} (proxied, {bytes.Length} bytes) <- {upstreamUrl}");
+    }
+
+    private byte[] DownloadScript(string upstreamUrl)
+    {
+        _requestLogger?.Invoke($"Proxy fetch: {upstreamUrl}");
+        using var response = _httpClient.GetAsync(upstreamUrl).GetAwaiter().GetResult();
+        response.EnsureSuccessStatusCode();
+        return response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+    }
+
+    private static void WriteResponse(HttpListenerContext context, int statusCode, string contentType, byte[] bytes)
+    {
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = contentType;
+        context.Response.ContentLength64 = bytes.Length;
+        context.Response.OutputStream.Write(bytes, 0, bytes.Length);
     }
 
     private static string GetContentType(string filePath) =>
@@ -144,6 +180,7 @@ internal sealed class LocalPageServer : IDisposable
             _listener.Stop();
         }
         _listener.Close();
+        _httpClient.Dispose();
         try
         {
             _loop.Wait(TimeSpan.FromSeconds(2));

@@ -49,7 +49,8 @@ public partial class MainWindow : Window
 
         Log($"App started. Log file: {_logFilePath}");
         Log($"Content root: {AppContext.BaseDirectory}");
-        Log("Using legacy WPF WebBrowser (IE/Trident engine). IE11 emulation registry flag applied.");
+        Log("Using legacy WPF WebBrowser (IE/Trident engine). IE11 emulation, localhost trusted zone, and same-origin script proxy applied.");
+        Log("Note: Stax.js does not support IE. If FattJs stays undefined after download, use WebView2.Working instead.");
 
         var explicitUrl = GetArgumentValue("--url");
         if (explicitUrl is not null)

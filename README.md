@@ -77,3 +77,4 @@ Both apps record:
 - **WebView2.Working** uses a dedicated WebView2 profile folder so cookies, cache, and local storage are isolated from Edge.
 - **LegacyWebView.BugRepro** sets the IE11 browser emulation registry flag so the `WebBrowser` control uses a modern document mode where possible. It still uses the legacy Trident engine and may behave differently from WebView2 or a normal browser.
 - stax.js may not fully work in the legacy WebBrowser control; that mismatch is part of what this repro is meant to surface.
+- **LegacyWebView.BugRepro** trusts `localhost` / `127.0.0.1` in the IE zone map, disables local-machine lockdown for the process, and proxies `staxjs-captcha.js` through the local HTTP server so scripts load same-origin. If `FattJs` is still undefined after download, the script is not compatible with the IE engine — Stax only supports modern browsers. Use **WebView2.Working** for a working tokenize flow.
