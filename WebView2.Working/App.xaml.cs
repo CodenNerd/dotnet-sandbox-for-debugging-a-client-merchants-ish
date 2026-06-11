@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace WebViewTroubleshooter;
+namespace WebView2.Working;
 
 public partial class App : Application
 {

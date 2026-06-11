@@ -1,56 +1,79 @@
 # WebViewTroubleshooter
 
-A tiny WPF + WebView2 desktop app for reproducing customer WebView issues.
+A WPF sandbox for reproducing merchant WebView payment issues (PHO-5058 / Hindsite).
+
+The solution contains two apps:
+
+| Project | Purpose | Browser engine |
+| --- | --- | --- |
+| **WebView2.Working** | Known-good reference implementation | WebView2 (Chromium / Edge) |
+| **LegacyWebView.BugRepro** | Reproduces legacy integration problems | WPF `WebBrowser` (IE / Trident) |
 
 ## Prerequisites
 
 - Windows
 - Visual Studio 2022 or the .NET SDK with WPF support
-- Microsoft Edge WebView2 Runtime installed on the machine
+- **WebView2.Working only:** Microsoft Edge WebView2 Runtime
 
 ## Run
 
 ```powershell
 dotnet restore
-dotnet run
 ```
 
-By default this loads `test-page.html` from the output directory. You can pass a customer URL instead:
+### Working version (WebView2)
 
 ```powershell
-dotnet run -- --url=https://customer-site.example/path
+dotnet run --project WebView2.Working
 ```
 
-You can isolate customer repros by using a separate WebView2 profile folder:
+Uses `card_form_incomplete` (current stax.js event name). Loads `test-page.html` by default.
 
 ```powershell
-dotnet run -- --url=https://customer-site.example --userDataDir=C:\Temp\WebView2CustomerProfile
+dotnet run --project WebView2.Working -- --url=https://customer-site.example/path
+```
+
+### Bug repro version (legacy WebView)
+
+```powershell
+dotnet run --project LegacyWebView.BugRepro
+```
+
+Uses the deprecated `card_form_uncomplete` event and the legacy WPF `WebBrowser` control with IE11 emulation. Loads `test-page.html` by default.
+
+```powershell
+dotnet run --project LegacyWebView.BugRepro -- --url=https://customer-site.example/path
+```
+
+Isolate profiles with a separate user data folder (WebView2 only):
+
+```powershell
+dotnet run --project WebView2.Working -- --userDataDir=C:\Temp\WebView2CustomerProfile
 ```
 
 ## What it logs
 
-The app writes a diagnostic log to:
+Logs are written under `%LOCALAPPDATA%\WebViewTroubleshooter\`:
 
-```text
-%LOCALAPPDATA%\WebViewTroubleshooter\Logs
-```
+- `WebView2.Working\Logs`
+- `LegacyWebView.BugRepro\Logs`
 
-It records:
+Both apps record:
 
-- Navigation start/completion
-- HTTP status when available
-- WebView2 web error status
+- Navigation start / completion
 - Console messages from the page
-- JavaScript messages sent with `chrome.webview.postMessage(...)`
-- WebView2 process failures
+- Host messages (`chrome.webview.postMessage` on WebView2; shimmed via `window.external` on legacy WebView)
+- WebView2 process failures (WebView2.Working only)
 
 ## Useful buttons
 
-- **Local Test**: loads `test-page.html` from the output directory.
-- **DevTools**: opens Chromium DevTools for the embedded WebView.
-- **Clear Profile**: shows where to delete the profile folder after closing the app.
-- **Open Log Folder**: opens the folder containing the diagnostic log.
+- **Local Test** — reloads `test-page.html` from the output directory
+- **DevTools** — Chromium DevTools (WebView2) or guidance for IE tools (legacy)
+- **Clear Profile / Clear Cache** — where to reset browser state after closing the app
+- **Open Log Folder** — opens the diagnostic log directory
 
 ## Notes
 
-This sample uses a dedicated WebView2 user data folder by default so cookies, cache, and local storage are isolated from Edge and from other repro runs.
+- **WebView2.Working** uses a dedicated WebView2 profile folder so cookies, cache, and local storage are isolated from Edge.
+- **LegacyWebView.BugRepro** sets the IE11 browser emulation registry flag so the `WebBrowser` control uses a modern document mode where possible. It still uses the legacy Trident engine and may behave differently from WebView2 or a normal browser.
+- stax.js may not fully work in the legacy WebBrowser control; that mismatch is part of what this repro is meant to surface.

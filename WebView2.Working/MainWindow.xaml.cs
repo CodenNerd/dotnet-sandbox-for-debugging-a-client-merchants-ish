@@ -6,13 +6,13 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 
-namespace WebViewTroubleshooter;
+namespace WebView2.Working;
 
 public partial class MainWindow : Window
 {
     private readonly string _logDirectory;
     private readonly string _logFilePath;
-    private string _userDataFolder;
+    private readonly string _userDataFolder;
 
     public MainWindow()
     {
@@ -21,12 +21,13 @@ public partial class MainWindow : Window
         _logDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WebViewTroubleshooter",
+            "WebView2.Working",
             "Logs");
         Directory.CreateDirectory(_logDirectory);
         _logFilePath = Path.Combine(_logDirectory, $"webview-log-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
 
         _userDataFolder = GetArgumentValue("--userDataDir")
-            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WebViewTroubleshooter", "WebView2Profile");
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WebViewTroubleshooter", "WebView2.Working", "Profile");
 
         Loaded += async (_, _) => await InitializeWebViewAsync();
     }
@@ -208,7 +209,7 @@ public partial class MainWindow : Window
     private void ClearProfileButton_Click(object sender, RoutedEventArgs e)
     {
         MessageBox.Show(
-            "Close the app, delete the WebView2Profile folder under %LOCALAPPDATA%\\WebViewTroubleshooter, then reopen. The folder cannot be safely deleted while WebView2 is running.",
+            "Close the app, delete the Profile folder under %LOCALAPPDATA%\\WebViewTroubleshooter\\WebView2.Working, then reopen. The folder cannot be safely deleted while WebView2 is running.",
             "Clear profile",
             MessageBoxButton.OK,
             MessageBoxImage.Information);

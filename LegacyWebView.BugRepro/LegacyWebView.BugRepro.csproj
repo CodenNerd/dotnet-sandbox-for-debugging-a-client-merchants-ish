@@ -5,12 +5,9 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>WebViewTroubleshooter</AssemblyName>
+    <AssemblyName>LegacyWebView.BugRepro</AssemblyName>
+    <RootNamespace>LegacyWebView.BugRepro</RootNamespace>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
-  </ItemGroup>
 
   <ItemGroup>
     <None Include="test-page.html" CopyToOutputDirectory="PreserveNewest" />
