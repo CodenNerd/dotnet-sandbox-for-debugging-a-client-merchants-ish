@@ -16,6 +16,7 @@
                 <Button Content="Reload" Width="80" Margin="0,0,6,0" Click="ReloadButton_Click" />
                 <Button Content="Local Test" Width="90" Margin="0,0,6,0" Click="LocalTestButton_Click" />
                 <Button Content="DevTools" Width="80" Margin="0,0,6,0" Click="DevToolsButton_Click" />
+                <Button Content="Diagnostics" Width="95" Margin="0,0,6,0" Click="DiagnosticsButton_Click" />
                 <Button Content="Clear Cache" Width="95" Margin="0,0,12,0" Click="ClearCacheButton_Click" />
             </StackPanel>
 
@@ -30,14 +31,16 @@
         <Grid Grid.Row="2" Margin="8">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <DockPanel Grid.Row="0" Margin="0,0,0,6">
+            <TextBlock x:Name="StatusText" Grid.Row="0" Margin="0,0,0,6" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="DarkRed" />
+            <DockPanel Grid.Row="1" Margin="0,0,0,6">
                 <TextBlock Text="Diagnostic log" FontWeight="Bold" VerticalAlignment="Center" />
                 <Button DockPanel.Dock="Right" Content="Copy" Width="70" Margin="6,0,0,0" Click="CopyLogButton_Click" />
                 <Button DockPanel.Dock="Right" Content="Open Log Folder" Width="115" Click="OpenLogFolderButton_Click" />
             </DockPanel>
-            <TextBox x:Name="LogBox" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" />
+            <TextBox x:Name="LogBox" Grid.Row="2" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" />
         </Grid>
     </Grid>
 </Window>

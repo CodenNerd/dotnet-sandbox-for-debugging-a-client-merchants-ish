@@ -10,18 +10,20 @@ internal sealed class LocalPageServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly string _root;
     private readonly Task _loop;
+    private readonly Action<string>? _requestLogger;
 
     public string BaseUrl { get; }
 
-    private LocalPageServer(HttpListener listener, int port, string root)
+    private LocalPageServer(HttpListener listener, int port, string root, Action<string>? requestLogger)
     {
         _listener = listener;
         _root = root;
+        _requestLogger = requestLogger;
         BaseUrl = $"http://127.0.0.1:{port}/";
         _loop = Task.Run(() => RunAsync(_cts.Token));
     }
 
-    public static LocalPageServer Start(string contentRoot)
+    public static LocalPageServer Start(string contentRoot, Action<string>? requestLogger = null)
     {
         var root = Path.GetFullPath(contentRoot);
         if (!root.EndsWith(Path.DirectorySeparatorChar))
@@ -41,7 +43,7 @@ internal sealed class LocalPageServer : IDisposable
                 var listener = new HttpListener();
                 listener.Prefixes.Add($"http://127.0.0.1:{port}/");
                 listener.Start();
-                return new LocalPageServer(listener, port, root);
+                return new LocalPageServer(listener, port, root, requestLogger);
             }
             catch (HttpListenerException)
             {
@@ -88,18 +90,19 @@ internal sealed class LocalPageServer : IDisposable
 
     private void HandleRequest(HttpListenerContext context)
     {
+        var relativePath = context.Request.Url?.AbsolutePath.TrimStart('/') ?? string.Empty;
+        if (string.IsNullOrEmpty(relativePath))
+        {
+            relativePath = "test-page.html";
+        }
+
         try
         {
-            var relativePath = context.Request.Url?.AbsolutePath.TrimStart('/') ?? string.Empty;
-            if (string.IsNullOrEmpty(relativePath))
-            {
-                relativePath = "test-page.html";
-            }
-
             var filePath = Path.GetFullPath(Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
             if (!filePath.StartsWith(_root, StringComparison.OrdinalIgnoreCase) || !File.Exists(filePath))
             {
                 context.Response.StatusCode = 404;
+                _requestLogger?.Invoke($"HTTP 404: GET /{relativePath}");
                 return;
             }
 
@@ -108,10 +111,12 @@ internal sealed class LocalPageServer : IDisposable
             context.Response.ContentType = GetContentType(filePath);
             context.Response.ContentLength64 = bytes.Length;
             context.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            _requestLogger?.Invoke($"HTTP 200: GET /{relativePath} ({bytes.Length} bytes)");
         }
-        catch
+        catch (Exception ex)
         {
             context.Response.StatusCode = 500;
+            _requestLogger?.Invoke($"HTTP 500: GET /{relativePath} - {ex.Message}");
         }
         finally
         {

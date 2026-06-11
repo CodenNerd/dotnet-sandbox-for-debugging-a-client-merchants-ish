@@ -4,6 +4,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Navigation;
+using System.Windows.Threading;
 
 namespace LegacyWebView.BugRepro;
 
@@ -13,25 +14,7 @@ public partial class MainWindow : Window
     private readonly string _logFilePath;
     private readonly WebViewScriptBridge _scriptBridge;
     private LocalPageServer? _localPageServer;
-
-    private const string ConsoleHookScript = """
-        (function () {
-            if (window.__legacyConsoleHookInstalled) return;
-            window.__legacyConsoleHookInstalled = true;
-            ['log', 'warn', 'error', 'info'].forEach(function (level) {
-                var original = console[level];
-                console[level] = function () {
-                    var message = Array.prototype.slice.call(arguments).join(' ');
-                    try {
-                        if (window.external && window.external.LogConsole) {
-                            window.external.LogConsole(level, message);
-                        }
-                    } catch (e) { }
-                    original.apply(console, arguments);
-                };
-            });
-        })();
-        """;
+    private DispatcherTimer? _diagnosticsTimer;
 
     public MainWindow()
     {
@@ -51,7 +34,11 @@ public partial class MainWindow : Window
         Browser.Navigating += Browser_Navigating;
         Browser.Navigated += Browser_Navigated;
         Browser.LoadCompleted += Browser_LoadCompleted;
-        Closed += (_, _) => _localPageServer?.Dispose();
+        Closed += (_, _) =>
+        {
+            _diagnosticsTimer?.Stop();
+            _localPageServer?.Dispose();
+        };
 
         Loaded += (_, _) => InitializeBrowser();
     }
@@ -61,6 +48,7 @@ public partial class MainWindow : Window
         WebBrowserHelper.SuppressScriptErrors(Browser, true);
 
         Log($"App started. Log file: {_logFilePath}");
+        Log($"Content root: {AppContext.BaseDirectory}");
         Log("Using legacy WPF WebBrowser (IE/Trident engine). IE11 emulation registry flag applied.");
 
         var explicitUrl = GetArgumentValue("--url");
@@ -70,9 +58,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        _localPageServer = LocalPageServer.Start(AppContext.BaseDirectory);
-        Log($"Serving test page over HTTP at {_localPageServer.BaseUrl} (avoids file:// script restrictions).");
-        Navigate(_localPageServer.BaseUrl + "test-page.html");
+        try
+        {
+            _localPageServer = LocalPageServer.Start(AppContext.BaseDirectory, Log);
+            Log($"Serving test page over HTTP at {_localPageServer.BaseUrl} (avoids file:// script restrictions).");
+            Navigate(_localPageServer.BaseUrl + "test-page.html");
+        }
+        catch (Exception ex)
+        {
+            ReportDiagnostic("error", "Failed to start local HTTP server: " + ex.Message);
+            Log("Initialization failed: " + ex);
+        }
     }
 
     private void Browser_Navigating(object? sender, NavigatingCancelEventArgs e)
@@ -92,33 +88,118 @@ public partial class MainWindow : Window
     {
         WebBrowserHelper.SuppressScriptErrors(Browser, true);
         Log($"LoadCompleted: {e.Uri}");
-        InjectConsoleHook();
+
+        if (Browser.Document is null)
+        {
+            ReportDiagnostic("error", "Load completed but Browser.Document is null.");
+            return;
+        }
+
+        ScheduleDiagnostics("initial");
     }
 
-    private void InjectConsoleHook()
+    private void ScheduleDiagnostics(string reason)
+    {
+        _diagnosticsTimer?.Stop();
+        _diagnosticsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _diagnosticsTimer.Tick += (_, _) =>
+        {
+            _diagnosticsTimer.Stop();
+            RunDiagnostics(reason);
+        };
+        _diagnosticsTimer.Start();
+    }
+
+    private void RunDiagnostics(string reason)
+    {
+        Log($"--- Diagnostics ({reason}) ---");
+
+        try
+        {
+            dynamic? document = Browser.Document;
+            if (document is null)
+            {
+                ReportDiagnostic("error", "Document is null during diagnostics.");
+                Log("Diagnostic: document is null");
+                return;
+            }
+
+            dynamic? window = document.parentWindow;
+            string userAgent = window?.navigator?.userAgent ?? "unknown";
+            Log($"User-Agent: {userAgent}");
+
+            bool externalAvailable = false;
+            try
+            {
+                externalAvailable = window?.external is not null;
+            }
+            catch
+            {
+            }
+            Log($"window.external available: {externalAvailable}");
+
+            string? readyState = document.readyState;
+            Log($"document.readyState: {readyState}");
+
+            string? pageStatus = TryEval("window.__pageStatus || 'not set'");
+            Log($"window.__pageStatus: {pageStatus}");
+
+            string? staxLoadState = TryEval("window.__staxLoadState || 'not set'");
+            Log($"window.__staxLoadState: {staxLoadState}");
+
+            string fattJsType = TryEval("typeof FattJs") ?? "unknown";
+            Log($"typeof FattJs: {fattJsType}");
+
+            string fattjsType = TryEval("typeof fattjs") ?? "unknown";
+            Log($"typeof fattjs: {fattjsType}");
+
+            string? lastError = TryEval("window.__lastScriptError || 'none'");
+            Log($"window.__lastScriptError: {lastError}");
+
+            if (fattJsType == "undefined")
+            {
+                ReportDiagnostic("error", $"stax.js did not load (typeof FattJs=undefined). State={staxLoadState}. See log for details.");
+            }
+            else if (staxLoadState == "initialized")
+            {
+                ReportDiagnostic("info", "stax.js loaded and FattJs initialized.");
+            }
+            else if (staxLoadState == "init-failed")
+            {
+                ReportDiagnostic("error", "stax.js loaded but FattJs initialization failed. See log.");
+            }
+            else
+            {
+                ReportDiagnostic("warn", $"Page loaded but stax state is '{staxLoadState}'. Check log.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ReportDiagnostic("error", "Diagnostics failed: " + ex.Message);
+            Log("Diagnostic exception: " + ex);
+        }
+
+        Log("--- End diagnostics ---");
+    }
+
+    private string? TryEval(string expression)
     {
         try
         {
             dynamic? document = Browser.Document;
             if (document is null)
             {
-                return;
+                return null;
             }
 
-            dynamic? head = document.GetElementsByTagName("head")?[0];
-            if (head is null)
-            {
-                return;
-            }
-
-            dynamic scriptElement = document.createElement("script");
-            scriptElement.type = "text/javascript";
-            scriptElement.text = ConsoleHookScript;
-            head.appendChild(scriptElement);
+            dynamic? window = document.parentWindow;
+            dynamic? result = window?.eval(expression);
+            return result?.ToString();
         }
         catch (Exception ex)
         {
-            Log($"Console hook injection failed: {ex.Message}");
+            Log($"eval({expression}) failed: {ex.Message}");
+            return null;
         }
     }
 
@@ -179,10 +260,20 @@ public partial class MainWindow : Window
             MessageBoxImage.Information);
     }
 
+    private void DiagnosticsButton_Click(object sender, RoutedEventArgs e) => RunDiagnostics("manual");
+
     private void LocalTestButton_Click(object sender, RoutedEventArgs e)
     {
-        _localPageServer ??= LocalPageServer.Start(AppContext.BaseDirectory);
-        Navigate(_localPageServer.BaseUrl + "test-page.html");
+        try
+        {
+            _localPageServer ??= LocalPageServer.Start(AppContext.BaseDirectory, Log);
+            Navigate(_localPageServer.BaseUrl + "test-page.html");
+        }
+        catch (Exception ex)
+        {
+            ReportDiagnostic("error", "Failed to start local HTTP server: " + ex.Message);
+            Log("Local test failed: " + ex);
+        }
     }
 
     private void ClearCacheButton_Click(object sender, RoutedEventArgs e)
@@ -206,6 +297,21 @@ public partial class MainWindow : Window
     }
 
     public void LogFromScript(string message) => Log(message);
+
+    public void ReportDiagnostic(string level, string message)
+    {
+        Log($"[{level.ToUpperInvariant()}] {message}");
+        Dispatcher.Invoke(() =>
+        {
+            StatusText.Text = message;
+            StatusText.Foreground = level switch
+            {
+                "error" => System.Windows.Media.Brushes.DarkRed,
+                "warn" => System.Windows.Media.Brushes.DarkOrange,
+                _ => System.Windows.Media.Brushes.DarkGreen
+            };
+        });
+    }
 
     private void Log(string message)
     {

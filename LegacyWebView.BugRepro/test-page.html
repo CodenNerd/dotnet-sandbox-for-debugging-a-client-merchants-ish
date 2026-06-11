@@ -1,9 +1,48 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <link rel="stylesheet" href="example/example.css">
-    <link rel="shortcut icon" type="image/png" href="/favicon.png" />
+    <meta charset="utf-8" />
+    <title>Legacy WebView Stax Test</title>
     <script>
+        window.__pageStatus = "bootstrapping";
+        window.__staxLoadState = "pending";
+        window.__lastScriptError = "none";
+
+        function reportDiag(level, message) {
+            try {
+                if (window.external && window.external.ReportDiag) {
+                    window.external.ReportDiag(level, message);
+                } else if (window.external && window.external.LogConsole) {
+                    window.external.LogConsole(level, message);
+                }
+            } catch (e) { }
+
+            var panel = document.getElementById("diag-status");
+            if (panel) {
+                var line = document.createElement("div");
+                line.style.color = level === "error" ? "#b00020" : (level === "warn" ? "#b36b00" : "#1b5e20");
+                line.textContent = "[" + level + "] " + message;
+                panel.appendChild(line);
+            }
+        }
+
+        (function installEarlyLogging() {
+            ["log", "warn", "error", "info"].forEach(function (level) {
+                var original = console[level];
+                console[level] = function () {
+                    var message = Array.prototype.slice.call(arguments).join(" ");
+                    reportDiag(level, message);
+                    original.apply(console, arguments);
+                };
+            });
+        })();
+
+        window.onerror = function (message, source, lineno, colno) {
+            window.__lastScriptError = message + " at " + source + ":" + lineno;
+            reportDiag("error", window.__lastScriptError);
+            return true;
+        };
+
         if (!window.chrome) window.chrome = {};
         if (!window.chrome.webview) {
             window.chrome.webview = {
@@ -14,18 +53,40 @@
                 }
             };
         }
+
+        reportDiag("info", "Page bootstrap complete. Loading external scripts...");
+        window.__pageStatus = "bootstrap-complete";
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/es6-promise/4.2.8/es6-promise.auto.min.js"></script>
-    <script src="https://staxjs.staxpayments.com/staxjs-captcha.js" onload="initFattMerchant()" onerror="onStaxScriptError()"></script>
+    <link rel="stylesheet" href="example/example.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/es6-promise/4.2.8/es6-promise.auto.min.js"
+            onload="reportDiag('info', 'es6-promise loaded')"
+            onerror="reportDiag('error', 'Failed to load es6-promise polyfill')"></script>
+    <script src="https://staxjs.staxpayments.com/staxjs-captcha.js"
+            onload="onStaxScriptLoaded()"
+            onerror="onStaxScriptError()"></script>
     <style>
         html,
         body {
-            height: 38px;
+            min-height: 200px;
             background-color: #e6e6e6;
+            font-family: Segoe UI, Arial, sans-serif;
+            margin: 0;
+            padding: 8px;
+        }
+
+        #diag-status {
+            background: #fff;
+            border: 1px solid #ccc;
+            padding: 8px;
+            margin-bottom: 8px;
+            max-height: 120px;
+            overflow: auto;
+            font-size: 12px;
         }
     </style>
 </head>
 <body>
+    <div id="diag-status"><strong>Diagnostics</strong></div>
     <style>
         .grecaptcha-badge {
             visibility: hidden;
@@ -53,80 +114,102 @@
         var fattjs;
 
         function onStaxScriptError() {
-            console.error("Failed to load staxjs-captcha.js");
+            window.__staxLoadState = "script-load-failed";
+            reportDiag("error", "Failed to load staxjs-captcha.js from CDN");
+        }
+
+        function onStaxScriptLoaded() {
+            window.__staxLoadState = "script-loaded";
+            reportDiag("info", "staxjs-captcha.js downloaded");
+            initFattMerchant();
         }
 
         function initFattMerchant() {
             if (typeof FattJs === "undefined") {
-                console.error("FattJs is not defined after staxjs-captcha.js loaded. This browser engine may not support stax.js.");
+                window.__staxLoadState = "fattjs-undefined";
+                reportDiag("error", "FattJs is undefined after staxjs-captcha.js loaded. This browser engine likely does not support stax.js.");
                 return;
             }
 
-        fattjs = new FattJs("Ultimate-Turf-cdc924459678", {
-            number: {
-                id: "fattjs-number",
-                placeholder: "%creditcardnum%",
-                style: "width: 90%; height:90%; border-radius: 3px; border: 1px solid #ccc; padding: .5em .5em; font-size: 91%;"
-            },
-            cvv: {
-                id: "fattjs-cvv",
-                placeholder: "000",
-                style: "width: 30px; height:90%; border-radius: 3px; border: 1px solid #ccc; padding: .5em .5em; font-size: 91%;"
-            }
-        });
-        fattjs
-            .showCardForm()
-            .then(function (handler) {
-                console.log("form loaded");
-            })
-            .catch(function (err) {
-                console.log("error init form " + err);
-            });
-        fattjs.on("card_form_complete", function (message) {
-            tokenizeButtonCard.disabled = false;
-        });
-        fattjs.on("card_form_uncomplete", function (message) {
-            tokenizeButtonCard.disabled = true;
-        });
-        tokenizeButtonCard.onclick = function () {
-            var form = document.querySelector("form");
-            var extraDetails = {
-                firstname: "Jane",
-                lastname: "Doe",
-                month: form.querySelector("input[name=month]").value,
-                year: form.querySelector("input[name=year]").value,
-                phone: "+1 (111) 111-1111",
-                address_1: "100 S Orange Ave",
-                address_2: "",
-                address_city: "Orlando",
-                address_state: "FL",
-                address_zip: "32811",
-                address_country: "USA",
-                url: "https://omni.fattmerchant.com/#/bill/",
-                match_customer: false,
-                method: 'card',
-                validate: true,
-                send_receipt: true,
-                meta: {
-                    reference: "test",
-                    otherField1: "",
-                    otherField2: ""
-                }
-            };
-            fattjs.tokenize(extraDetails).then(function (result) {
-                if (result) {
-                    console.log("tokenize:", result);
-                    if (window.chrome && window.chrome.webview) {
-                        window.chrome.webview.postMessage({ Key: 2, Value: result });
+            try {
+                fattjs = new FattJs("Ultimate-Turf-cdc924459678", {
+                    number: {
+                        id: "fattjs-number",
+                        placeholder: "%creditcardnum%",
+                        style: "width: 90%; height:90%; border-radius: 3px; border: 1px solid #ccc; padding: .5em .5em; font-size: 91%;"
+                    },
+                    cvv: {
+                        id: "fattjs-cvv",
+                        placeholder: "000",
+                        style: "width: 30px; height:90%; border-radius: 3px; border: 1px solid #ccc; padding: .5em .5em; font-size: 91%;"
                     }
-                }
-            }).catch(function (err) {
-                console.log("tokenize error:", err);
-                if (window.chrome && window.chrome.webview) {
-                    window.chrome.webview.postMessage({ Key: 3, Value: JSON.stringify(err) });
-                }
-            });
-        };
+                });
+
+                fattjs
+                    .showCardForm()
+                    .then(function () {
+                        window.__staxLoadState = "initialized";
+                        reportDiag("info", "FattJs showCardForm() succeeded");
+                    })
+                    .catch(function (err) {
+                        window.__staxLoadState = "init-failed";
+                        reportDiag("error", "FattJs showCardForm() failed: " + err);
+                    });
+
+                fattjs.on("card_form_complete", function () {
+                    tokenizeButtonCard.disabled = false;
+                    reportDiag("info", "card_form_complete");
+                });
+                fattjs.on("card_form_uncomplete", function () {
+                    tokenizeButtonCard.disabled = true;
+                    reportDiag("warn", "card_form_uncomplete");
+                });
+
+                tokenizeButtonCard.onclick = function () {
+                    var form = document.querySelector("form");
+                    var extraDetails = {
+                        firstname: "Jane",
+                        lastname: "Doe",
+                        month: form.querySelector("input[name=month]").value,
+                        year: form.querySelector("input[name=year]").value,
+                        phone: "+1 (111) 111-1111",
+                        address_1: "100 S Orange Ave",
+                        address_2: "",
+                        address_city: "Orlando",
+                        address_state: "FL",
+                        address_zip: "32811",
+                        address_country: "USA",
+                        url: "https://omni.fattmerchant.com/#/bill/",
+                        match_customer: false,
+                        method: "card",
+                        validate: true,
+                        send_receipt: true,
+                        meta: {
+                            reference: "test",
+                            otherField1: "",
+                            otherField2: ""
+                        }
+                    };
+
+                    reportDiag("info", "tokenize requested");
+                    fattjs.tokenize(extraDetails).then(function (result) {
+                        if (result) {
+                            reportDiag("info", "tokenize succeeded");
+                            if (window.chrome && window.chrome.webview) {
+                                window.chrome.webview.postMessage({ Key: 2, Value: result });
+                            }
+                        }
+                    }).catch(function (err) {
+                        reportDiag("error", "tokenize failed: " + JSON.stringify(err));
+                        if (window.chrome && window.chrome.webview) {
+                            window.chrome.webview.postMessage({ Key: 3, Value: JSON.stringify(err) });
+                        }
+                    });
+                };
+            } catch (err) {
+                window.__staxLoadState = "init-failed";
+                reportDiag("error", "FattJs constructor failed: " + err);
+            }
         }
 
         function TokennizeCard(details) {
@@ -147,7 +230,7 @@
                 email: deets.email,
                 url: "https://omni.fattmerchant.com/#/bill/",
                 match_customer: false,
-                method: 'card',
+                method: "card",
                 validate: true,
                 send_receipt: true,
                 meta: {
@@ -155,15 +238,16 @@
                     otherField1: deets.corp_id,
                     otherField2: deets.number
                 }
-            }
+            };
             fattjs.tokenize(extraDetails).then(function (result) {
                 if (result) {
                     window.chrome.webview.postMessage({ Key: 2, Value: result });
                 }
             }).catch(function (err) {
                 window.chrome.webview.postMessage({ Key: 3, Value: JSON.stringify(err) });
-            })
+            });
         }
+
         function handlePay(details) {
             var deets = JSON.parse(details);
             var extraDetails = {
@@ -182,22 +266,24 @@
                 email: deets.email,
                 url: "https://omni.fattmerchant.com/#/bill/",
                 match_customer: false,
-                method: 'card',
+                method: "card",
                 validate: true,
                 meta: {
                     reference: deets.peachtree_id,
                     otherField1: deets.corp_id,
                     otherField2: deets.number
                 }
-            }
+            };
             fattjs.pay(extraDetails).then(function (result) {
                 if (result) {
                     window.chrome.webview.postMessage({ Key: 1, Value: result });
                 }
             }).catch(function (err) {
                 window.chrome.webview.postMessage({ Key: 3, Value: JSON.stringify(err) });
-            })
+            });
         }
+
+        window.__pageStatus = "body-scripts-loaded";
     </script>
 </body>
 </html>
