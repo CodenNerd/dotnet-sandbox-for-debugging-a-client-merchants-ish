@@ -46,7 +46,6 @@ public partial class MainWindow : Window
 
         _scriptBridge = new WebViewScriptBridge(this);
         Browser.ObjectForScripting = _scriptBridge;
-        Browser.ScriptErrorsSuppressed = true;
 
         Browser.Navigating += Browser_Navigating;
         Browser.Navigated += Browser_Navigated;
@@ -88,8 +87,13 @@ public partial class MainWindow : Window
     {
         try
         {
-            dynamic document = Browser.Document;
-            dynamic? head = document?.GetElementsByTagName("head")?[0];
+            dynamic? document = Browser.Document;
+            if (document is null)
+            {
+                return;
+            }
+
+            dynamic? head = document.GetElementsByTagName("head")?[0];
             if (head is null)
             {
                 return;
