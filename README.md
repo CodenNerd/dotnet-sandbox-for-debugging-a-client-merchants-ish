@@ -12,10 +12,10 @@ A tiny WPF + WebView2 desktop app for reproducing customer WebView issues.
 
 ```powershell
 dotnet restore
-dotnet run -- --url=https://www.example.com
+dotnet run
 ```
 
-You can pass a customer URL:
+By default this loads `test-page.html` from the output directory. You can pass a customer URL instead:
 
 ```powershell
 dotnet run -- --url=https://customer-site.example/path

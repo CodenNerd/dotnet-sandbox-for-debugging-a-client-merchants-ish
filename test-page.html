@@ -1,50 +1,143 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>WebView2 Troubleshooter Test Page</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.45; }
-    button { margin: .25rem; padding: .5rem .75rem; }
-    pre { background: #f3f3f3; padding: 1rem; overflow: auto; }
-  </style>
+    <link rel="stylesheet" href="example/example.css">
+    <link rel="shortcut icon" type="image/png" href="/favicon.png" />
+    <script scr="https://cdnjs.cloudflare.com/ajax/libs/es6-promise/4.2.8/es6-promise.auto.min.js"></script>
+    <script src="https://staxjs.staxpayments.com/staxjs-captcha.js"></script>
+    <style>
+        html,
+        body {
+            height: 38px;
+            background-color: #e6e6e6;
+        }
+    </style>
 </head>
 <body>
-  <h1>WebView2 Troubleshooter Test Page</h1>
-  <p>This local page is useful for checking JavaScript, console messages, WebView host messaging, local storage, and basic network calls.</p>
-
-  <button onclick="console.log('Console log from local test page')">Console log</button>
-  <button onclick="chrome.webview.postMessage('Hello from JavaScript at ' + new Date().toISOString())">Post message to host</button>
-  <button onclick="localStorage.setItem('webview-test', new Date().toISOString()); render()">Write localStorage</button>
-  <button onclick="render()">Refresh state</button>
-  <button onclick="testFetch()">Test fetch</button>
-
-  <h2>State</h2>
-  <pre id="output"></pre>
-
-  <script>
-    function render(extra = '') {
-      document.getElementById('output').textContent = JSON.stringify({
-        userAgent: navigator.userAgent,
-        location: location.href,
-        localStorageValue: localStorage.getItem('webview-test'),
-        time: new Date().toISOString(),
-        extra
-      }, null, 2);
-    }
-
-    async function testFetch() {
-      try {
-        const response = await fetch('https://www.example.com', { mode: 'no-cors' });
-        render('Fetch completed. no-cors response type: ' + response.type);
-      } catch (err) {
-        console.error(err);
-        render('Fetch failed: ' + err.message);
-      }
-    }
-
-    render();
-  </script>
+    <style>
+        .grecaptcha-badge {
+            visibility: hidden;
+        }
+    </style>
+    <form onsubmit="return false;">
+        <div id="card-element" style="text-align: center;" class="field">
+            <div id="fattjs-number" style="width: 180px; height: 35px; display: inline-block; margin: 3px"></div>
+            <div id="fattjs-cvv" style="width: 50px; height: 35px; display: inline-block; margin: 3px"></div>
+        </div>
+        <div style="text-align: center; color: #4d4d4d; padding-top: 10px;">
+            This site is protected by reCAPTCHA and the Google
+            <a href="https://policies.google.com/privacy" target="_blank"><u>Privacy Policy</u></a> and <a href="https://policies.google.com/terms" target="_blank"><u>Terms of Service</u></a> apply.
+        </div>
+    </form>
+    <script>
+        var tokenizeButtonCard = document.querySelector("#tokenizebutton-card");
+        var tokenizeButtonBank = document.querySelector("#tokenizebutton-bank");
+        fattjs = new FattJs("%webtoken%", {
+            number: {
+                id: "fattjs-number",
+                placeholder: "%creditcardnum%",
+                style: "width: 90%; height:90%; border-radius: 3px; border: 1px solid #ccc; padding: .5em .5em; font-size: 91%;"
+            },
+            cvv: {
+                id: "fattjs-cvv",
+                placeholder: "000",
+                style: "width: 30px; height:90%; border-radius: 3px; border: 1px solid #ccc; padding: .5em .5em; font-size: 91%;"
+            }
+        });
+        // call init secure card input form into iFrame
+        fattjs
+            .showCardForm()
+            .then(function (handler) {
+                console.log("form loaded");
+            })
+            .catch(function (err) {
+                console.log("error init form " + err);
+            });
+        fattjs.on("card_form_complete", function (message) {
+            // activate pay button
+        });
+        fattjs.on("card_form_uncomplete", function (message) {
+            // deactivate pay button
+        });
+        function TokennizeCard(details) {
+            var deets = JSON.parse(details);
+            var extraDetails = {
+                firstname: deets.firstname,
+                lastname: deets.lastname,
+                total: deets.total,
+                month: deets.exp.split(" ")[0],
+                year: deets.exp.split(" ")[1],
+                phone: deets.phone,
+                address_1: deets.address1,
+                address_2: deets.address2,
+                address_city: deets.city,
+                address_state: deets.state,
+                address_zip: deets.zipcode,
+                address_country: deets.country,
+                email: deets.email,
+                url: "https://omni.fattmerchant.com/#/bill/",
+                match_customer: false,
+                method: 'card',
+                // validate is optional and can be true or false.
+                // determines whether or not fattmerchant.js does client-side validation.
+                // the validation follows the sames rules as the api.
+                // check the api documentation for more info:
+                // https://fattmerchant.com/api-documentation
+                validate: true,
+                send_receipt: true,
+                meta: {
+                    reference: deets.peachtree_id,
+                    otherField1: deets.corp_id,
+                    otherField2: deets.number
+                }
+            }
+            fattjs.tokenize(extraDetails).then(function (result) {
+                if (result) {
+                    window.chrome.webview.postMessage({ Key: 2, Value: result });
+                }
+            }).catch(function (err) {
+                window.chrome.webview.postMessage({ Key: 3, Value: JSON.stringify(err) });
+            })
+        }
+        function handlePay(details) {
+            var deets = JSON.parse(details);
+            var extraDetails = {
+                firstname: deets.firstname,
+                lastname: deets.lastname,
+                total: deets.total,
+                month: deets.exp.split(" ")[0],
+                year: deets.exp.split(" ")[1],
+                phone: deets.phone,
+                address_1: deets.address1,
+                address_2: deets.address2,
+                address_city: deets.city,
+                address_state: deets.state,
+                address_zip: deets.zipcode,
+                address_country: deets.country,
+                email: deets.email,
+                url: "https://omni.fattmerchant.com/#/bill/",
+                match_customer: false,
+                method: 'card',
+                // validate is optional and can be true or false.
+                // determines whether or not fattmerchant.js does client-side validation.
+                // the validation follows the sames rules as the api.
+                // check the api documentation for more info:
+                // https://fattmerchant.com/api-documentation/
+                validate: true,
+                meta: {
+                    reference: deets.peachtree_id,
+                    otherField1: deets.corp_id,
+                    otherField2: deets.number
+                }
+            }
+            fattjs.pay(extraDetails).then(function (result) {
+                if (result) {
+                    window.chrome.webview.postMessage({ Key: 1, Value: result });
+                }
+            }).catch(function (err) {
+                window.chrome.webview.postMessage({ Key: 3, Value: JSON.stringify(err) });
+            })
+        }
+    </script>
 </body>
 </html>

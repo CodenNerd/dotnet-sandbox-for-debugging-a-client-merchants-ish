@@ -71,7 +71,8 @@ public partial class MainWindow : Window
             await EnableConsoleCaptureAsync(Browser.CoreWebView2);
             Browser.CoreWebView2.DOMContentLoaded += (_, e) => Log($"DOMContentLoaded: navigationId={e.NavigationId}");
 
-            var startUrl = GetArgumentValue("--url") ?? "https://www.example.com";
+            var startUrl = GetArgumentValue("--url")
+                ?? new Uri(Path.Combine(AppContext.BaseDirectory, "test-page.html")).AbsoluteUri;
             Navigate(startUrl);
         }
         catch (Exception ex)
