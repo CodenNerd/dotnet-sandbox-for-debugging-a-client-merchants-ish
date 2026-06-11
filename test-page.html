@@ -23,6 +23,12 @@
         <div id="card-element" style="text-align: center;" class="field">
             <div id="fattjs-number" style="width: 180px; height: 35px; display: inline-block; margin: 3px"></div>
             <div id="fattjs-cvv" style="width: 50px; height: 35px; display: inline-block; margin: 3px"></div>
+            <input name="month" size="3" maxlength="2" placeholder="MM" style="width: 40px; height: 35px; border-radius: 3px; border: 1px solid #ccc; padding: .5em .5em; font-size: 91%; margin: 3px" />
+            /
+            <input name="year" size="5" maxlength="4" placeholder="YYYY" style="width: 55px; height: 35px; border-radius: 3px; border: 1px solid #ccc; padding: .5em .5em; font-size: 91%; margin: 3px" />
+        </div>
+        <div style="text-align: center; padding-top: 10px;">
+            <button id="tokenizebutton-card" type="button" disabled>Tokenize Card</button>
         </div>
         <div style="text-align: center; color: #4d4d4d; padding-top: 10px;">
             This site is protected by reCAPTCHA and the Google
@@ -32,7 +38,7 @@
     <script>
         var tokenizeButtonCard = document.querySelector("#tokenizebutton-card");
         var tokenizeButtonBank = document.querySelector("#tokenizebutton-bank");
-        fattjs = new FattJs("%webtoken%", {
+        fattjs = new FattJs("Ultimate-Turf-cdc924459678", {
             number: {
                 id: "fattjs-number",
                 placeholder: "%creditcardnum%",
@@ -54,11 +60,53 @@
                 console.log("error init form " + err);
             });
         fattjs.on("card_form_complete", function (message) {
-            // activate pay button
+            tokenizeButtonCard.disabled = false;
         });
-        fattjs.on("card_form_uncomplete", function (message) {
-            // deactivate pay button
+        // fattjs.on("card_form_uncomplete", function (message) {
+        //     tokenizeButtonCard.disabled = true;
+        // });
+       fattjs.on("card_form_incomplete", function (message) {
+            tokenizeButtonCard.disabled = true;
         });
+        tokenizeButtonCard.onclick = function () {
+            var form = document.querySelector("form");
+            var extraDetails = {
+                firstname: "Jane",
+                lastname: "Doe",
+                month: form.querySelector("input[name=month]").value,
+                year: form.querySelector("input[name=year]").value,
+                phone: "+1 (111) 111-1111",
+                address_1: "100 S Orange Ave",
+                address_2: "",
+                address_city: "Orlando",
+                address_state: "FL",
+                address_zip: "32811",
+                address_country: "USA",
+                url: "https://omni.fattmerchant.com/#/bill/",
+                match_customer: false,
+                method: 'card',
+                validate: true,
+                send_receipt: true,
+                meta: {
+                    reference: "test",
+                    otherField1: "",
+                    otherField2: ""
+                }
+            };
+            fattjs.tokenize(extraDetails).then(function (result) {
+                if (result) {
+                    console.log("tokenize:", result);
+                    if (window.chrome && window.chrome.webview) {
+                        window.chrome.webview.postMessage({ Key: 2, Value: result });
+                    }
+                }
+            }).catch(function (err) {
+                console.log("tokenize error:", err);
+                if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.postMessage({ Key: 3, Value: JSON.stringify(err) });
+                }
+            });
+        };
         function TokennizeCard(details) {
             var deets = JSON.parse(details);
             var extraDetails = {
