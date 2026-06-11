@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WebView2 Troubleshooter Test Page</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.45; }
+    button { margin: .25rem; padding: .5rem .75rem; }
+    pre { background: #f3f3f3; padding: 1rem; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>WebView2 Troubleshooter Test Page</h1>
+  <p>This local page is useful for checking JavaScript, console messages, WebView host messaging, local storage, and basic network calls.</p>
+
+  <button onclick="console.log('Console log from local test page')">Console log</button>
+  <button onclick="chrome.webview.postMessage('Hello from JavaScript at ' + new Date().toISOString())">Post message to host</button>
+  <button onclick="localStorage.setItem('webview-test', new Date().toISOString()); render()">Write localStorage</button>
+  <button onclick="render()">Refresh state</button>
+  <button onclick="testFetch()">Test fetch</button>
+
+  <h2>State</h2>
+  <pre id="output"></pre>
+
+  <script>
+    function render(extra = '') {
+      document.getElementById('output').textContent = JSON.stringify({
+        userAgent: navigator.userAgent,
+        location: location.href,
+        localStorageValue: localStorage.getItem('webview-test'),
+        time: new Date().toISOString(),
+        extra
+      }, null, 2);
+    }
+
+    async function testFetch() {
+      try {
+        const response = await fetch('https://www.example.com', { mode: 'no-cors' });
+        render('Fetch completed. no-cors response type: ' + response.type);
+      } catch (err) {
+        console.error(err);
+        render('Fetch failed: ' + err.message);
+      }
+    }
+
+    render();
+  </script>
+</body>
+</html>
