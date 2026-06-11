@@ -12,6 +12,7 @@ public partial class MainWindow : Window
     private readonly string _logDirectory;
     private readonly string _logFilePath;
     private readonly WebViewScriptBridge _scriptBridge;
+    private LocalPageServer? _localPageServer;
 
     private const string ConsoleHookScript = """
         (function () {
@@ -50,18 +51,28 @@ public partial class MainWindow : Window
         Browser.Navigating += Browser_Navigating;
         Browser.Navigated += Browser_Navigated;
         Browser.LoadCompleted += Browser_LoadCompleted;
+        Closed += (_, _) => _localPageServer?.Dispose();
 
         Loaded += (_, _) => InitializeBrowser();
     }
 
     private void InitializeBrowser()
     {
+        WebBrowserHelper.SuppressScriptErrors(Browser, true);
+
         Log($"App started. Log file: {_logFilePath}");
         Log("Using legacy WPF WebBrowser (IE/Trident engine). IE11 emulation registry flag applied.");
 
-        var startUrl = GetArgumentValue("--url")
-            ?? new Uri(Path.Combine(AppContext.BaseDirectory, "test-page.html")).AbsoluteUri;
-        Navigate(startUrl);
+        var explicitUrl = GetArgumentValue("--url");
+        if (explicitUrl is not null)
+        {
+            Navigate(explicitUrl);
+            return;
+        }
+
+        _localPageServer = LocalPageServer.Start(AppContext.BaseDirectory);
+        Log($"Serving test page over HTTP at {_localPageServer.BaseUrl} (avoids file:// script restrictions).");
+        Navigate(_localPageServer.BaseUrl + "test-page.html");
     }
 
     private void Browser_Navigating(object? sender, NavigatingCancelEventArgs e)
@@ -79,6 +90,7 @@ public partial class MainWindow : Window
 
     private void Browser_LoadCompleted(object? sender, NavigationEventArgs e)
     {
+        WebBrowserHelper.SuppressScriptErrors(Browser, true);
         Log($"LoadCompleted: {e.Uri}");
         InjectConsoleHook();
     }
@@ -169,8 +181,8 @@ public partial class MainWindow : Window
 
     private void LocalTestButton_Click(object sender, RoutedEventArgs e)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "test-page.html");
-        Browser.Navigate(new Uri(path).AbsoluteUri);
+        _localPageServer ??= LocalPageServer.Start(AppContext.BaseDirectory);
+        Navigate(_localPageServer.BaseUrl + "test-page.html");
     }
 
     private void ClearCacheButton_Click(object sender, RoutedEventArgs e)

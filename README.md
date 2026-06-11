@@ -39,7 +39,7 @@ dotnet run --project WebView2.Working -- --url=https://customer-site.example/pat
 dotnet run --project LegacyWebView.BugRepro
 ```
 
-Uses the deprecated `card_form_uncomplete` event and the legacy WPF `WebBrowser` control with IE11 emulation. Loads `test-page.html` by default.
+Uses the deprecated `card_form_uncomplete` event and the legacy WPF `WebBrowser` control with IE11 emulation. Loads `test-page.html` by default over `http://127.0.0.1` (avoids IE `file://` script restrictions) and suppresses script error dialogs in the log panel instead.
 
 ```powershell
 dotnet run --project LegacyWebView.BugRepro -- --url=https://customer-site.example/path

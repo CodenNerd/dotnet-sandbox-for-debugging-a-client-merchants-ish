@@ -15,8 +15,8 @@
             };
         }
     </script>
-    <script scr="https://cdnjs.cloudflare.com/ajax/libs/es6-promise/4.2.8/es6-promise.auto.min.js"></script>
-    <script src="https://staxjs.staxpayments.com/staxjs-captcha.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/es6-promise/4.2.8/es6-promise.auto.min.js"></script>
+    <script src="https://staxjs.staxpayments.com/staxjs-captcha.js" onload="initFattMerchant()" onerror="onStaxScriptError()"></script>
     <style>
         html,
         body {
@@ -50,6 +50,18 @@
     <script>
         var tokenizeButtonCard = document.querySelector("#tokenizebutton-card");
         var tokenizeButtonBank = document.querySelector("#tokenizebutton-bank");
+        var fattjs;
+
+        function onStaxScriptError() {
+            console.error("Failed to load staxjs-captcha.js");
+        }
+
+        function initFattMerchant() {
+            if (typeof FattJs === "undefined") {
+                console.error("FattJs is not defined after staxjs-captcha.js loaded. This browser engine may not support stax.js.");
+                return;
+            }
+
         fattjs = new FattJs("Ultimate-Turf-cdc924459678", {
             number: {
                 id: "fattjs-number",
@@ -115,6 +127,8 @@
                 }
             });
         };
+        }
+
         function TokennizeCard(details) {
             var deets = JSON.parse(details);
             var extraDetails = {

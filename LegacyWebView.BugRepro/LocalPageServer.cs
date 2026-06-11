@@ -1,0 +1,151 @@
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+
+namespace LegacyWebView.BugRepro;
+
+internal sealed class LocalPageServer : IDisposable
+{
+    private readonly HttpListener _listener;
+    private readonly CancellationTokenSource _cts = new();
+    private readonly string _root;
+    private readonly Task _loop;
+
+    public string BaseUrl { get; }
+
+    private LocalPageServer(HttpListener listener, int port, string root)
+    {
+        _listener = listener;
+        _root = root;
+        BaseUrl = $"http://127.0.0.1:{port}/";
+        _loop = Task.Run(() => RunAsync(_cts.Token));
+    }
+
+    public static LocalPageServer Start(string contentRoot)
+    {
+        var root = Path.GetFullPath(contentRoot);
+        if (!root.EndsWith(Path.DirectorySeparatorChar))
+        {
+            root += Path.DirectorySeparatorChar;
+        }
+
+        for (var port = 8765; port < 8865; port++)
+        {
+            if (!IsPortAvailable(port))
+            {
+                continue;
+            }
+
+            try
+            {
+                var listener = new HttpListener();
+                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                listener.Start();
+                return new LocalPageServer(listener, port, root);
+            }
+            catch (HttpListenerException)
+            {
+            }
+        }
+
+        throw new InvalidOperationException("Could not start a local HTTP server for the test page.");
+    }
+
+    private static bool IsPortAvailable(int port)
+    {
+        try
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, port);
+            listener.Start();
+            listener.Stop();
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+    }
+
+    private async Task RunAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                var context = await _listener.GetContextAsync().WaitAsync(token);
+                _ = Task.Run(() => HandleRequest(context), token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (HttpListenerException) when (token.IsCancellationRequested)
+            {
+                break;
+            }
+        }
+    }
+
+    private void HandleRequest(HttpListenerContext context)
+    {
+        try
+        {
+            var relativePath = context.Request.Url?.AbsolutePath.TrimStart('/') ?? string.Empty;
+            if (string.IsNullOrEmpty(relativePath))
+            {
+                relativePath = "test-page.html";
+            }
+
+            var filePath = Path.GetFullPath(Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            if (!filePath.StartsWith(_root, StringComparison.OrdinalIgnoreCase) || !File.Exists(filePath))
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+
+            var bytes = File.ReadAllBytes(filePath);
+            context.Response.StatusCode = 200;
+            context.Response.ContentType = GetContentType(filePath);
+            context.Response.ContentLength64 = bytes.Length;
+            context.Response.OutputStream.Write(bytes, 0, bytes.Length);
+        }
+        catch
+        {
+            context.Response.StatusCode = 500;
+        }
+        finally
+        {
+            context.Response.Close();
+        }
+    }
+
+    private static string GetContentType(string filePath) =>
+        Path.GetExtension(filePath).ToLowerInvariant() switch
+        {
+            ".html" => "text/html; charset=utf-8",
+            ".htm" => "text/html; charset=utf-8",
+            ".js" => "application/javascript; charset=utf-8",
+            ".css" => "text/css; charset=utf-8",
+            ".json" => "application/json; charset=utf-8",
+            ".png" => "image/png",
+            _ => "application/octet-stream"
+        };
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        if (_listener.IsListening)
+        {
+            _listener.Stop();
+        }
+        _listener.Close();
+        try
+        {
+            _loop.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch
+        {
+        }
+        _cts.Dispose();
+    }
+}
